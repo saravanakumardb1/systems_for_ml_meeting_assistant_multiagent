@@ -50,8 +50,31 @@ share the transcript prefix) → `reviewer` (critic; bounded reflection loop,
 > Note: TPU/GPU device utilisation is not exposed via the OpenAI API. The
 > scrapeable proxies for device pressure are KV-cache occupancy and queue depth
 > from vLLM `/metrics`; host CPU/RAM come from `psutil`.
+>
+> **vLLM version note (P1.2/P5.4):** the per-request prefix-cache metric depends on
+> the server populating `usage.prompt_tokens_details.cached_tokens`. Some vLLM
+> builds never do (then `prefix_cache_hit_ratio` is uniformly 0). The runner emits
+> a loud warning at the end of a sweep when this happens; in that case rely on the
+> server-side `delta_server_prefix_cache_hit_rate` from `/metrics`. Pin a vLLM
+> version known to emit per-request cached tokens if you need that metric.
 
 ## Results
+
+> **⚠️ Methodology caveat (results pre-date the measurement fixes).** The committed
+> figures below were produced *before* the benchmark-correctness fixes in
+> `docs/IMPROVEMENT_ROADMAP.md`:
+> - The sweep ran modes in fixed order against a never-reset server, so the
+>   prefix-cache hit rate correlated with **execution order, not topology**
+>   (P1.1). Result #3's monotonic seq→par→lg rise is largely a cache-warming
+>   artifact; once warm, all three modes are comparable.
+> - The per-request `prefix_cache_hit_ratio` was **inert** (the server never
+>   populated `cached_tokens`); only the server-side counter carried signal (P1.2).
+> - Re-dispatch policy differed across modes, so revision-round token/latency
+>   counts weren't directly comparable (P2.1).
+>
+> The runner now defaults to `--warmup 1` + shuffled order and records
+> `run_index`. **Re-run the sweep on real hardware to regenerate these figures**
+> before citing Results #2–#4.
 
 Measured on **Llama-3.1-8B** (vLLM, Cloud TPU v5e) across a 54-run sweep:
 6 transcripts spanning three size tiers (`small_ami`, `small_swe`,
