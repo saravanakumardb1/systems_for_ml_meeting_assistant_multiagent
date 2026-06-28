@@ -49,6 +49,17 @@ class PipelineResult:
     def errored(self) -> bool:
         return any(c.error for c in self.calls)
 
+    def finalize(self) -> None:
+        """Post-run consistency guard (P3.2).
+
+        A failed agent call returns empty text, and the reviewer (or its
+        fallback parser) can then emit a spurious 'pass' over empty artifacts.
+        If any call errored, never report a clean 'pass' — downgrade to 'error'
+        so consumers don't treat a broken run as good. Call once at pipeline end.
+        """
+        if self.errored and self.verdict_status == "pass":
+            self.verdict_status = "error"
+
 
 class AgentBundle:
     """Instantiates the five agents against one shared async client."""

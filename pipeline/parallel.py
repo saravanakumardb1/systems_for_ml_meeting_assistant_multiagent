@@ -77,4 +77,5 @@ async def run_parallel(transcript: str, transcript_size: str,
 
     result.artifacts = {"summary": summ.text, "action_items": extr.text,
                         "followups": draft.text, "brief": brief}
+    result.finalize()
     return result

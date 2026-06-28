@@ -141,3 +141,53 @@ class TestLangGraphRevisionLoop:
         assert result.revisions == config.MAX_REVISIONS
         # langgraph re-runs all workers each round: 1 initial + MAX_REVISIONS reruns
         assert bundle.summarizer.run.call_count == 1 + config.MAX_REVISIONS
+
+
+# ------------------------------------------------------------------ errored run guard
+class TestErroredRunNotPass:
+    @pytest.mark.asyncio
+    async def test_errored_worker_downgrades_pass_to_error(self):
+        """A worker that errored must NOT be reported as a clean 'pass' even if the
+        reviewer returns pass over the empty artifact (P3.2)."""
+        from pipeline.sequential import run_sequential
+        with patch("pipeline.sequential.AgentBundle") as MockBundle:
+            bundle = MagicMock()
+            MockBundle.return_value = bundle
+            bundle.coordinator.run = AsyncMock(return_value=_make_call("coordinator", "brief"))
+            # summarizer errored (empty text + error set)
+            bundle.summarizer.run  = AsyncMock(
+                return_value=_make_call("summarizer", text="", error="timeout"))
+            bundle.extractor.run   = AsyncMock(return_value=_make_call("extractor"))
+            bundle.drafter.run     = AsyncMock(return_value=_make_call("drafter"))
+            bundle.reviewer.run    = AsyncMock(return_value=_pass_verdict())
+
+            from bench.trace import Tracer
+            import httpx
+            async with httpx.AsyncClient() as client:
+                result = await run_sequential("transcript", "small", client,
+                                              Tracer(), stream=False)
+
+        assert result.errored is True
+        assert result.verdict_status == "error"  # not "pass"
+
+    @pytest.mark.asyncio
+    async def test_clean_run_keeps_pass(self):
+        """No errors → finalize() leaves a genuine 'pass' untouched."""
+        from pipeline.sequential import run_sequential
+        with patch("pipeline.sequential.AgentBundle") as MockBundle:
+            bundle = MagicMock()
+            MockBundle.return_value = bundle
+            bundle.coordinator.run = AsyncMock(return_value=_make_call("coordinator", "brief"))
+            bundle.summarizer.run  = AsyncMock(return_value=_make_call("summarizer"))
+            bundle.extractor.run   = AsyncMock(return_value=_make_call("extractor"))
+            bundle.drafter.run     = AsyncMock(return_value=_make_call("drafter"))
+            bundle.reviewer.run    = AsyncMock(return_value=_pass_verdict())
+
+            from bench.trace import Tracer
+            import httpx
+            async with httpx.AsyncClient() as client:
+                result = await run_sequential("transcript", "small", client,
+                                              Tracer(), stream=False)
+
+        assert result.errored is False
+        assert result.verdict_status == "pass"

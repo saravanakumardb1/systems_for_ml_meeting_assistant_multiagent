@@ -135,4 +135,5 @@ async def run_langgraph(transcript: str, transcript_size: str,
         "followups": final.get("followups", ""),
         "brief": final.get("brief", ""),
     }
+    result.finalize()
     return result
