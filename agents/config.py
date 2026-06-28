@@ -18,6 +18,9 @@ from dataclasses import dataclass
 VLLM_BASE_URL: str = os.environ.get("VLLM_BASE_URL", "http://localhost:8001")
 VLLM_METRICS_URL: str = os.environ.get("VLLM_METRICS_URL", f"{VLLM_BASE_URL}/metrics")
 MODEL_NAME: str = os.environ.get("MODEL_NAME", "meta-llama/Llama-3.1-8B-Instruct")
+# TODO-1: API_KEY is read here but never sent as an Authorization header by the
+# client (agents/base.py). Wire `Authorization: Bearer {API_KEY}` into requests if
+# we ever target a secured vLLM endpoint; harmless to leave unsent for local/mock.
 API_KEY: str = os.environ.get("VLLM_API_KEY", "EMPTY")  # vLLM ignores the value
 
 # Networking
