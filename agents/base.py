@@ -113,7 +113,10 @@ class Agent:
                 res.revision = revision
                 res.attempts = attempt
                 return res
-            except (httpx.HTTPError, json.JSONDecodeError, KeyError) as exc:
+            # IndexError/TypeError cover malformed responses with empty/missing
+            # `choices` (e.g. obj["choices"][0] on []); these are retryable too.
+            except (httpx.HTTPError, json.JSONDecodeError, KeyError,
+                    IndexError, TypeError) as exc:
                 last_err = f"{type(exc).__name__}: {exc}"
                 if attempt < config.MAX_RETRIES:
                     await asyncio.sleep(0.5 * attempt)
