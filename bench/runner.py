@@ -17,6 +17,7 @@ import argparse
 import asyncio
 import json
 import os
+import random
 import time
 
 import httpx
@@ -71,28 +72,51 @@ async def main_async(args) -> None:
 
     transcripts = {s: _read_transcript(args.transcript_dir, s) for s in args.sizes}
 
+    # Build the full job list. Shuffling (default on, seeded) decorrelates pipeline
+    # *mode* from execution *order* so the prefix-cache warming that accrues over the
+    # sweep can't be mistaken for a topology effect (P1.1).
+    jobs = [(size, mode, r)
+            for size in args.sizes for mode in args.modes for r in range(args.repeats)]
+    if args.shuffle:
+        random.Random(args.seed).shuffle(jobs)
+
     limits = httpx.Limits(max_connections=16, max_keepalive_connections=16)
     async with httpx.AsyncClient(limits=limits) as client:
-        for size in args.sizes:
-            for mode in args.modes:
-                for r in range(args.repeats):
-                    label = f"{size}__{mode}__rep{r}"
-                    print(f"[run] {label} ...", flush=True)
+        # Warmup: prime the server prefix cache per size so EVERY measured run starts
+        # warm, removing the cold-first-run asymmetry. Warmups are discarded (P1.1).
+        if args.warmup > 0:
+            warm_mode = args.modes[0]
+            for size in args.sizes:
+                for w in range(args.warmup):
+                    print(f"[warmup] {size} ({w + 1}/{args.warmup}) via {warm_mode} ...",
+                          flush=True)
                     try:
-                        record = await run_one(mode, size, transcripts[size], r,
-                                               client, scraper, not args.no_stream)
-                    except Exception as exc:  # keep the sweep alive
-                        print(f"[run] {label} FAILED: {type(exc).__name__}: {exc}")
-                        record = {"mode": mode, "transcript_size": size, "repeat": r,
-                                  "errored": True, "error": f"{type(exc).__name__}: {exc}"}
-                    out_path = os.path.join(config.RUNS_DIR, f"{label}.json")
-                    with open(out_path, "w", encoding="utf-8") as fh:
-                        json.dump(record, fh, indent=2, default=str)
-                    et = record.get("e2e_wall_s")
-                    print(f"[run] {label} done"
-                          + (f" ({et:.2f}s, {record.get('total_tokens')} tok, "
-                             f"prefix-hit={record.get('prefix_cache_hit_ratio'):.2%})"
-                             if et else ""), flush=True)
+                        await run_one(warm_mode, size, transcripts[size], -1,
+                                      client, scraper, not args.no_stream)
+                    except Exception as exc:  # warmup failures are non-fatal
+                        print(f"[warmup] {size} FAILED: {type(exc).__name__}: {exc}")
+
+        for run_index, (size, mode, r) in enumerate(jobs):
+            label = f"{size}__{mode}__rep{r}"
+            print(f"[run] {label} (#{run_index}) ...", flush=True)
+            try:
+                record = await run_one(mode, size, transcripts[size], r,
+                                       client, scraper, not args.no_stream)
+            except Exception as exc:  # keep the sweep alive
+                print(f"[run] {label} FAILED: {type(exc).__name__}: {exc}")
+                record = {"mode": mode, "transcript_size": size, "repeat": r,
+                          "errored": True, "error": f"{type(exc).__name__}: {exc}"}
+            # Bookkeeping so cache-warmth is auditable downstream (P1.1).
+            record["run_index"] = run_index
+            record["is_warmup"] = False
+            out_path = os.path.join(config.RUNS_DIR, f"{label}.json")
+            with open(out_path, "w", encoding="utf-8") as fh:
+                json.dump(record, fh, indent=2, default=str)
+            et = record.get("e2e_wall_s")
+            print(f"[run] {label} done"
+                  + (f" ({et:.2f}s, {record.get('total_tokens')} tok, "
+                     f"prefix-hit={record.get('prefix_cache_hit_ratio'):.2%})"
+                     if et else ""), flush=True)
 
     if scraper:
         scraper.close()
@@ -111,6 +135,17 @@ def parse_args():
                    help="Skip scraping vLLM /metrics (host metrics still sampled).")
     p.add_argument("--no-stream", action="store_true",
                    help="Disable streaming (TTFT will be unavailable).")
+    # --- P1.1: cache-warming controls -------------------------------------
+    p.add_argument("--warmup", type=int, default=1,
+                   help="Discarded warmup runs per size to prime the prefix cache so "
+                        "every measured run starts warm (removes cold-first-run bias). "
+                        "Set 0 to disable.")
+    p.add_argument("--no-shuffle", dest="shuffle", action="store_false",
+                   help="Run jobs in fixed size/mode/repeat order. By default jobs are "
+                        "shuffled (seeded) so mode is decorrelated from execution order.")
+    p.add_argument("--seed", type=int, default=0,
+                   help="Seed for the (deterministic) job shuffle.")
+    p.set_defaults(shuffle=True)
     return p.parse_args()
 
 
