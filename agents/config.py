@@ -30,6 +30,16 @@ MAX_RETRIES: int = int(os.environ.get("MAX_RETRIES", "3"))
 # Reflection / self-correction
 MAX_REVISIONS: int = int(os.environ.get("MAX_REVISIONS", "2"))
 
+# P1.3: shared-prefix prompt layout. When enabled, the three workers use an
+# IDENTICAL leading prompt (common system preamble + transcript + brief) and move
+# their role-specific instruction to a trailing TASK block, so vLLM can reuse the
+# long shared KV prefix across the concurrent workers. Default OFF preserves the
+# baseline (role-specific system prompt; transcript in the middle). See TODO-3 for
+# the open question on whether trailing instructions affect output quality.
+SHARED_PREFIX_LAYOUT: bool = os.environ.get(
+    "SHARED_PREFIX_LAYOUT", "0").lower() in ("1", "true", "yes", "on")
+WORKER_SHARED_PROMPT_FILE: str = "worker_shared.md"
+
 
 @dataclass(frozen=True)
 class AgentSpec:

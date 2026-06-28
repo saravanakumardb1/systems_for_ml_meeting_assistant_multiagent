@@ -2,7 +2,10 @@
 import pytest
 from unittest.mock import AsyncMock
 
-from agents import base, config
+from agents import base, config, worker_util
+from agents.drafter import Drafter
+from agents.extractor import Extractor
+from agents.summarizer import Summarizer
 
 
 class _FakeResp:
@@ -78,3 +81,41 @@ class TestMalformedResponseRetry:
         assert res.prompt_tokens == 10
         assert res.cached_tokens == 4
         assert client.calls == 1
+
+
+# ------------------------------------------------------------------ P1.3 shared-prefix layout
+class TestSharedPrefixLayout:
+    def test_default_layout_brief_first_no_task(self):
+        body = worker_util.compose_worker_input("BRIEF", "TRANSCRIPT", None)
+        assert body.startswith("COORDINATION BRIEF:")
+        assert "TASK:" not in body
+
+    def test_shared_layout_transcript_first_task_last(self):
+        body = worker_util.compose_worker_input(
+            "BRIEF", "TRANSCRIPT", None,
+            role_instruction="do the thing", shared_prefix=True)
+        assert body.startswith("TRANSCRIPT:")
+        assert "TASK:" in body
+        assert body.rstrip().endswith("do the thing")  # role instruction at the END
+
+    def test_default_construction_keeps_role_system_prompt(self):
+        s = Summarizer(object())
+        assert s.shared_prefix is False
+        assert s.system_prompt == s.role_instruction  # no swap in default mode
+
+    def test_shared_construction_swaps_to_common_preamble(self, monkeypatch):
+        monkeypatch.setattr(worker_util.config, "SHARED_PREFIX_LAYOUT", True)
+        s, e, d = Summarizer(object()), Extractor(object()), Drafter(object())
+        # all three workers now share an IDENTICAL system preamble ...
+        assert s.system_prompt == e.system_prompt == d.system_prompt
+        # ... while each retains its distinct role instruction
+        assert len({s.role_instruction, e.role_instruction, d.role_instruction}) == 3
+        # composed bodies share an identical (transcript+brief) leading prefix
+        prefixes = [
+            worker_util.compose_worker_input(
+                "BRIEF", "TRANSCRIPT", None,
+                role_instruction=a.role_instruction, shared_prefix=True
+            ).split("TASK:")[0]
+            for a in (s, e, d)
+        ]
+        assert prefixes[0] == prefixes[1] == prefixes[2]
