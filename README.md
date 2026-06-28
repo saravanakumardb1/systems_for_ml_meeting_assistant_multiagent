@@ -166,6 +166,38 @@ The mock returns contract-correct outputs (JSON for extractor/reviewer, Markdown
 elsewhere) and simulated `usage` with `cached_tokens`, so the reflection loop,
 parsers, and every metric path execute for real.
 
+## Run locally on Ollama (real model, no TPU/GPU server)
+
+[Ollama](https://ollama.com) exposes an OpenAI-compatible API, so the agents can
+target it directly. A convenience wrapper handles env + transcripts + summary:
+
+```bash
+ollama pull llama3.1:8b
+scripts/run_ollama.sh                          # small, 3 modes, 3 repeats, warmup 1
+SIZES="small medium" REPEATS=2 scripts/run_ollama.sh
+OLLAMA_MODEL=qwen3.5:9b scripts/run_ollama.sh
+```
+
+Or run the pieces manually:
+
+```bash
+export VLLM_BASE_URL=http://localhost:11434 MODEL_NAME=llama3.1:8b
+export NO_PROXY=localhost,127.0.0.1            # bypass any corporate proxy for localhost
+python scripts/generate_transcripts.py --offline --sizes small
+python -m bench.runner --sizes small --no-server-metrics --runs-dir results/ollama/runs
+```
+
+Caveats specific to Ollama:
+
+- **No vLLM `/metrics`** → pass `--no-server-metrics` (host CPU/RAM still sampled).
+- **No per-request `cached_tokens`** → `prefix_cache_hit_ratio` is 0 and the runner
+  prints a loud P1.2 warning. This is expected; use a vLLM host to exercise prefix
+  caching.
+- **Single model instance serializes requests** → `parallel` ≈ `sequential`
+  wall-clock (no decode batching), unlike a batching server like vLLM.
+- Output goes to `results/ollama/runs/` (git-ignored) so a local sweep never
+  clobbers the canonical TPU corpus in `results/runs/`.
+
 ## Layout
 
 ```
@@ -174,7 +206,7 @@ meeting-assistant/
 ├── pipeline/      sequential.py, parallel.py, langgraph_pipeline.py
 ├── bench/         runner.py, metrics.py, trace.py, system_sampler.py, vllm_metrics.py, plot.py
 ├── prompts/       one .md per agent + transcript_generator.md
-├── scripts/       launch_vllm_8b.sh, generate_transcripts.py,
+├── scripts/       launch_vllm_8b.sh, run_ollama.sh, generate_transcripts.py,
 │                  make_synthetic_transcripts.py, mock_vllm_server.py
 ├── transcripts/   synthetic transcripts (small_ami, small_swe, medium_finance,
 │                  medium_welsh, large_finance, large_meetingbank)

@@ -67,7 +67,8 @@ async def run_one(mode: str, size: str, transcript: str, repeat: int,
 
 
 async def main_async(args) -> None:
-    os.makedirs(config.RUNS_DIR, exist_ok=True)
+    runs_dir = args.runs_dir
+    os.makedirs(runs_dir, exist_ok=True)
     scraper = None if args.no_server_metrics else VllmMetricsScraper(config.VLLM_METRICS_URL)
 
     transcripts = {s: _read_transcript(args.transcript_dir, s) for s in args.sizes}
@@ -119,7 +120,7 @@ async def main_async(args) -> None:
             # Bookkeeping so cache-warmth is auditable downstream (P1.1).
             record["run_index"] = run_index
             record["is_warmup"] = False
-            out_path = os.path.join(config.RUNS_DIR, f"{label}.json")
+            out_path = os.path.join(runs_dir, f"{label}.json")
             with open(out_path, "w", encoding="utf-8") as fh:
                 json.dump(record, fh, indent=2, default=str)
             et = record.get("e2e_wall_s")
@@ -147,7 +148,7 @@ async def main_async(args) -> None:
               "expected.")
         print("!" * 72)
 
-    print(f"\nWrote run records to {config.RUNS_DIR}")
+    print(f"\nWrote run records to {runs_dir}")
     print("Aggregate + plot with: python -m bench.plot")
 
 
@@ -158,6 +159,9 @@ def parse_args():
                    choices=list(config.PIPELINE_MODES))
     p.add_argument("--repeats", type=int, default=3)
     p.add_argument("--transcript-dir", default=config.NORMALIZED_DIR)
+    p.add_argument("--runs-dir", default=config.RUNS_DIR,
+                   help="Where to write per-run JSON records. Override to keep a "
+                        "local (e.g. Ollama) sweep out of the canonical results/runs/.")
     p.add_argument("--no-server-metrics", action="store_true",
                    help="Skip scraping vLLM /metrics (host metrics still sampled).")
     p.add_argument("--no-stream", action="store_true",
