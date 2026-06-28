@@ -96,6 +96,8 @@ async def main_async(args) -> None:
                     except Exception as exc:  # warmup failures are non-fatal
                         print(f"[warmup] {size} FAILED: {type(exc).__name__}: {exc}")
 
+        any_cached_tokens = False
+        any_prompt_tokens = False
         for run_index, (size, mode, r) in enumerate(jobs):
             label = f"{size}__{mode}__rep{r}"
             print(f"[run] {label} (#{run_index}) ...", flush=True)
@@ -106,6 +108,8 @@ async def main_async(args) -> None:
                 print(f"[run] {label} FAILED: {type(exc).__name__}: {exc}")
                 record = {"mode": mode, "transcript_size": size, "repeat": r,
                           "errored": True, "error": f"{type(exc).__name__}: {exc}"}
+            any_cached_tokens = any_cached_tokens or (record.get("cached_tokens") or 0) > 0
+            any_prompt_tokens = any_prompt_tokens or (record.get("prompt_tokens") or 0) > 0
             # Bookkeeping so cache-warmth is auditable downstream (P1.1).
             record["run_index"] = run_index
             record["is_warmup"] = False
@@ -120,6 +124,23 @@ async def main_async(args) -> None:
 
     if scraper:
         scraper.close()
+
+    # P1.2: the per-request prefix-cache metric is only meaningful if the server
+    # populates usage.prompt_tokens_details.cached_tokens. Some vLLM builds never
+    # do, leaving prefix_cache_hit_ratio uniformly 0 — warn loudly so it isn't
+    # mistaken for "no cache reuse" (the server-side /metrics counter still works).
+    if any_prompt_tokens and not any_cached_tokens:
+        print("\n" + "!" * 72)
+        print("WARNING (P1.2): no run reported usage.prompt_tokens_details."
+              "cached_tokens > 0.")
+        print("  The per-request `prefix_cache_hit_ratio` metric is INERT on this "
+              "server.")
+        print("  Rely on the server-side `delta_server_prefix_cache_hit_rate` "
+              "instead, and")
+        print("  check your vLLM version/flags if per-request cached tokens are "
+              "expected.")
+        print("!" * 72)
+
     print(f"\nWrote run records to {config.RUNS_DIR}")
     print("Aggregate + plot with: python -m bench.plot")
 
