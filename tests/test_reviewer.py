@@ -1,5 +1,6 @@
 """Tests for agents/reviewer.py — parse_verdict robustness."""
 import json
+import logging
 
 from agents.reviewer import parse_verdict
 
@@ -86,3 +87,24 @@ class TestParseVerdictMalformed:
         raw = json.dumps({"status": "pass", "issues": {}, "extra": "ignored"})
         v = parse_verdict(raw)
         assert v.status == "pass"
+
+
+# ------------------------------------------------------------------ logging (P3.3)
+class TestParseVerdictLogging:
+    def test_unparseable_nonempty_logs_warning(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="agents.reviewer"):
+            v = parse_verdict("the model rambled with no json at all")
+        assert v.status == "pass"
+        assert any("unparseable" in r.message for r in caplog.records)
+
+    def test_bad_json_logs_warning(self, caplog):
+        # Braces present (regex matches) but invalid JSON inside → decode failure.
+        with caplog.at_level(logging.WARNING, logger="agents.reviewer"):
+            parse_verdict("{not: valid, json}")
+        assert any("decode failed" in r.message for r in caplog.records)
+
+    def test_empty_input_is_silent(self, caplog):
+        with caplog.at_level(logging.WARNING, logger="agents.reviewer"):
+            v = parse_verdict("")
+        assert v.status == "pass"
+        assert caplog.records == []

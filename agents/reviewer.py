@@ -18,6 +18,7 @@ Expected verdict shape:
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 
@@ -25,6 +26,8 @@ import httpx
 
 from agents import config
 from agents.base import Agent, CallResult
+
+logger = logging.getLogger(__name__)
 
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
@@ -44,13 +47,25 @@ class Verdict:
 
 
 def parse_verdict(text: str) -> Verdict:
-    """Robustly parse the reviewer JSON, defaulting to 'pass' on garbage."""
+    """Robustly parse the reviewer JSON, defaulting to 'pass' on garbage.
+
+    Falling back to 'pass' on unparseable output silently drops the reviewer's
+    judgement, so log a warning whenever non-empty text fails to parse (P3.3).
+    Empty text (e.g. an errored reviewer call) is left silent — the run-level
+    error guard (PipelineResult.finalize) already covers that case.
+    """
+    non_empty = bool((text or "").strip())
     match = _JSON_RE.search(text or "")
     if not match:
+        if non_empty:
+            logger.warning("reviewer verdict unparseable (no JSON object found); "
+                           "defaulting to 'pass'. raw[:200]=%r", text[:200])
         return Verdict(status="pass", raw=text)
     try:
         obj = json.loads(match.group(0))
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        logger.warning("reviewer verdict JSON decode failed (%s); defaulting to "
+                       "'pass'. raw[:200]=%r", exc, text[:200])
         return Verdict(status="pass", raw=text)
     status = str(obj.get("status", "pass")).lower()
     issues = obj.get("issues", {}) or {}
