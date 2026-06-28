@@ -136,3 +136,11 @@ class TestSummarize:
         seq = s[(s["transcript_size"] == "small_ami") & (s["mode"] == "sequential")]
         # values are 20, 21, 22 → std = 1.0
         assert seq["e2e_wall_s_std"].values[0] == pytest.approx(1.0)
+
+    def test_n_runs_and_ci95(self):
+        df = self._make_df()
+        s = summarize(df)
+        seq = s[(s["transcript_size"] == "small_ami") & (s["mode"] == "sequential")]
+        assert seq["n_runs"].values[0] == 3
+        # CI95 half-width = 1.96 * std / sqrt(n) = 1.96 * 1.0 / sqrt(3)
+        assert seq["e2e_wall_s_ci95"].values[0] == pytest.approx(1.96 / (3 ** 0.5))

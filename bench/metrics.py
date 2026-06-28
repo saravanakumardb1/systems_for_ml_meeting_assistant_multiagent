@@ -116,19 +116,32 @@ def aggregate(runs_dir: str) -> pd.DataFrame:
 
 
 def summarize(df: pd.DataFrame) -> pd.DataFrame:
-    """Mean and std over repeats, grouped by (transcript_size, mode)."""
+    """Mean, std, group size, and 95% CI half-width over repeats, grouped by
+    (transcript_size, mode).
+
+    Adds `n_runs` and a `<metric>_ci95` column per metric (P5.1) so reports can
+    show uncertainty rather than bare means — important given the small repeat
+    counts and the visible run-to-run variance.
+    """
     if df.empty:
         return df
+    # `run_index` is a sweep-ordering counter, not a measurement — don't aggregate it.
     metric_cols = [c for c in df.columns
-                   if df[c].dtype.kind in "fi" and c not in ("repeat",)]
-    mean_df = (df.groupby(["transcript_size", "mode"])[metric_cols]
-               .mean(numeric_only=True).reset_index())
-    std_df = (df.groupby(["transcript_size", "mode"])[metric_cols]
+                   if df[c].dtype.kind in "fi" and c not in ("repeat", "run_index")]
+    grouped_by = df.groupby(["transcript_size", "mode"])
+    mean_df = grouped_by[metric_cols].mean(numeric_only=True).reset_index()
+    std_df = (grouped_by[metric_cols]
               .std(numeric_only=True)
               .rename(columns={c: f"{c}_std" for c in metric_cols})
               .reset_index()
               .drop(columns=["transcript_size", "mode"]))
+    n_runs = grouped_by.size().reset_index(name="n_runs")["n_runs"]
+
     grouped = pd.concat([mean_df, std_df], axis=1)
+    grouped["n_runs"] = n_runs.values
+    # 95% CI half-width = 1.96 * std / sqrt(n). NaN when n < 2 (std undefined).
+    for c in metric_cols:
+        grouped[f"{c}_ci95"] = 1.96 * grouped[f"{c}_std"] / (grouped["n_runs"] ** 0.5)
     grouped["transcript_size"] = grouped["transcript_size"].astype(object)
     grouped["mode"] = grouped["mode"].astype(object)
     return grouped
