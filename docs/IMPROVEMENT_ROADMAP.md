@@ -102,12 +102,12 @@ benchmark whose entire purpose is measurement.
 The three modes currently do different *amounts of work* on revision, contaminating
 latency/token comparisons.
 
-- [ ] **P2.1 Unify the re-dispatch policy.** Sequential re-runs all 3 workers,
+- [ ] **P2.1 Unify the re-dispatch policy.** *(open — see TODO-2)* Sequential re-runs all 3 workers,
   parallel re-runs only flagged workers, langgraph re-runs all 3
   (`pipeline/langgraph_pipeline.py:82-87`). Pick one policy (recommend selective) and
   apply it across all three modes, or document the difference and exclude it from
   comparisons.
-- [ ] **P2.2 Fix the `revisions` off-by-one.** For identical work, langgraph reports
+- [x] **P2.2 Fix the `revisions` off-by-one.** ✅ [`518d12a`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/518d12a) For identical work, langgraph reports
   `revisions=3` while sequential/parallel report `2` (`reviewer_node` increments even
   on the budget-capped pass). Make `result.revisions` count *performed* rerun rounds
   consistently across modes.
@@ -116,17 +116,17 @@ latency/token comparisons.
 
 ## Phase 3 — Robustness & reliability
 
-- [ ] **P3.1 Catch all malformed-response errors.** `Agent.call` retries only on
+- [x] **P3.1 Catch all malformed-response errors.** ✅ [`1d7572e`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/1d7572e) `Agent.call` retries only on
   `httpx.HTTPError, json.JSONDecodeError, KeyError`, but `_call_once` can raise
   `IndexError`/`TypeError` on empty/malformed `choices` (`agents/base.py:180`). Add
   these to the retry set.
-- [ ] **P3.2 Stop silent failure swallowing.** A failed worker returns `text=""`;
+- [x] **P3.2 Stop silent failure swallowing.** ✅ [`076654e`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/076654e) A failed worker returns `text=""`;
   `parse_verdict("")` then defaults to `pass`, so an errored run can yield a "pass"
   verdict with empty artifacts. Surface worker errors into the verdict / mark the run
   invalid rather than silently passing.
-- [ ] **P3.3 Log dropped reviewer verdicts.** When `parse_verdict` falls back to `pass`
+- [x] **P3.3 Log dropped reviewer verdicts.** ✅ [`8e9ef8b`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/8e9ef8b) When `parse_verdict` falls back to `pass`
   on unparseable JSON, emit a warning so quality regressions aren't hidden.
-- [ ] **P3.4 Sampler nit.** `system_sampler` primes *process* CPU but samples *system*
+- [x] **P3.4 Sampler nit.** ✅ [`ff49068`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/ff49068) `system_sampler` primes *process* CPU but samples *system*
   CPU un-primed; align priming with what is sampled (or drop the priming call).
 
 ---
@@ -135,12 +135,13 @@ latency/token comparisons.
 
 Add tests that would have caught the bugs above.
 
-- [ ] **P4.1** Assert langgraph revision count == sequential/parallel for the same
-  reviewer behavior (covers P2.2).
-- [ ] **P4.2** Test `_call_once` and streaming error paths (empty `choices`,
-  malformed JSON, missing `usage`) — covers P3.1.
-- [ ] **P4.3** Test that an errored worker does **not** produce a spurious `pass`
-  verdict / is flagged invalid — covers P3.2.
+- [x] **P4.1** Assert langgraph revision count == sequential/parallel for the same
+  reviewer behavior (covers P2.2). ✅ [`518d12a`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/518d12a)
+- [~] **P4.2** Test `_call_once` and streaming error paths (empty `choices`,
+  malformed JSON, missing `usage`) — covers P3.1. Non-stream paths done in
+  [`1d7572e`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/1d7572e); streaming-path tests still TODO.
+- [x] **P4.3** Test that an errored worker does **not** produce a spurious `pass`
+  verdict / is flagged invalid — covers P3.2. ✅ [`076654e`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/076654e)
 - [ ] **P4.4** Test re-dispatch policy parity across modes — covers P2.1.
 - [ ] **P4.5** Test the warmup/cache-reset bookkeeping in run records — covers P1.1.
 
