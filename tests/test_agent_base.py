@@ -30,6 +30,87 @@ class _FakePostClient:
         return _FakeResp(self._p)
 
 
+class _FakeStream:
+    def __init__(self, lines):
+        self._lines = lines
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    def raise_for_status(self):
+        return None
+
+    async def aiter_lines(self):
+        for ln in self._lines:
+            yield ln
+
+
+class _FakeStreamClient:
+    """Stand-in for httpx.AsyncClient.stream (SSE path)."""
+    def __init__(self, lines):
+        self._lines = lines
+        self.calls = 0
+
+    def stream(self, *args, **kwargs):
+        self.calls += 1
+        return _FakeStream(self._lines)
+
+
+# ------------------------------------------------------------------ P4.2 streaming
+class TestStreamingPath:
+    @pytest.mark.asyncio
+    async def test_stream_with_usage_populates_tokens_and_ttft(self):
+        lines = [
+            'data: {"choices":[{"delta":{"content":"Hello"}}]}',
+            'data: {"choices":[{"delta":{"content":" world"}}]}',
+            'data: {"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":2,'
+            '"total_tokens":14,"prompt_tokens_details":{"cached_tokens":5}}}',
+            "data: [DONE]",
+        ]
+        agent = base.Agent(config.AGENT_SPECS["summarizer"],
+                           _FakeStreamClient(lines), stream=True)
+        res = await agent.call("x")
+        assert res.error is None
+        assert res.text == "Hello world"
+        assert res.prompt_tokens == 12
+        assert res.completion_tokens == 2
+        assert res.cached_tokens == 5
+        assert res.ttft_s is not None  # first content chunk set TTFT
+
+    @pytest.mark.asyncio
+    async def test_stream_without_usage_degrades_gracefully(self):
+        """Some servers omit the usage chunk — text still parsed, tokens default 0."""
+        lines = [
+            'data: {"choices":[{"delta":{"content":"Hi"}}]}',
+            "data: [DONE]",
+        ]
+        agent = base.Agent(config.AGENT_SPECS["drafter"],
+                           _FakeStreamClient(lines), stream=True)
+        res = await agent.call("x")
+        assert res.error is None
+        assert res.text == "Hi"
+        assert res.prompt_tokens == 0
+        assert res.total_tokens == 0
+        assert res.ttft_s is not None
+
+    @pytest.mark.asyncio
+    async def test_stream_skips_non_data_and_blank_lines(self):
+        lines = [
+            "",                       # blank
+            ": keep-alive comment",   # non-data line
+            'data: {"choices":[{"delta":{"content":"ok"}}]}',
+            "data: [DONE]",
+        ]
+        agent = base.Agent(config.AGENT_SPECS["extractor"],
+                           _FakeStreamClient(lines), stream=True)
+        res = await agent.call("x")
+        assert res.text == "ok"
+        assert res.error is None
+
+
 # ------------------------------------------------------------------ P3.1
 class TestMalformedResponseRetry:
     @pytest.mark.asyncio
