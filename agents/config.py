@@ -58,8 +58,12 @@ class TranscriptSize:
     n_topics: int
 
 
-# Approximate prompt token budgets. Large overlaps the proposal's 30-60 min
-# meeting range (~8k-15k tokens) which is where KV-cache pressure shows up.
+# Approximate prompt token budgets for the SYNTHETIC SMOKE generator
+# (scripts/generate_transcripts.py), used for offline/CI runs. These are
+# intentionally small and are NOT the sizes of the committed benchmark corpus:
+# the six named files in transcripts/ are produced by
+# scripts/make_synthetic_transcripts.py at larger, domain-specific word targets
+# (small_ami ~5k tok ... large_meetingbank ~66k tok). See README "Transcripts".
 TRANSCRIPT_SIZES: dict[str, TranscriptSize] = {
     "small":  TranscriptSize("small",  target_tokens=1200,  n_speakers=3, n_topics=2),
     "medium": TranscriptSize("medium", target_tokens=5000,  n_speakers=5, n_topics=4),

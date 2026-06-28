@@ -62,10 +62,19 @@ Measured on **Llama-3.1-8B** (vLLM, Cloud TPU v5e) across a 54-run sweep:
 > **Transcript provenance.** All transcripts shipped in `transcripts/` are
 > **synthetic**, produced by the seeded generator
 > `scripts/make_synthetic_transcripts.py` (no real recordings or personal
-> data). They are sized to match the original benchmark tiers within a few
-> percent; the committed `results/` were measured on real hardware with
-> equivalently-sized inputs, so the figures below remain representative of the
-> systems behaviour rather than of any specific meeting content.
+> data). The committed `results/` were measured on real hardware with these
+> inputs, so the figures below remain representative of the systems behaviour
+> rather than of any specific meeting content.
+>
+> **Two transcript generators (don't confuse them):**
+> - `scripts/make_synthetic_transcripts.py` produces the six **named benchmark
+>   files** in `transcripts/` (domain-flavoured, word-targeted:
+>   `small_ami` ~5k tok … `large_meetingbank` ~66k tok). This is the canonical
+>   corpus for the published sweep.
+> - `scripts/generate_transcripts.py` + `config.TRANSCRIPT_SIZES` produce small
+>   token-targeted `small/medium/large.txt` for **offline smoke tests / CI**
+>   (1.2k / 5k / 13k tok). These are intentionally smaller and are *not* the
+>   benchmark corpus.
 
 1. **Concurrent dispatch cuts end-to-end latency 29–40% on medium/large
    transcripts.** Parallel vs. sequential: `large_meetingbank` 63.1 s → 37.9 s
