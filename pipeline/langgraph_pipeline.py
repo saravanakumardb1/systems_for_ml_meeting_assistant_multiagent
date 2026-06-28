@@ -75,14 +75,18 @@ def _build_graph(agents: AgentBundle, tracer: Tracer):
                 state["transcript"], state.get("summary", ""),
                 state.get("action_items", ""), state.get("followups", ""), revision=rev)
         tracer.add_span(res.to_span())
+        # Only count a revision when a rerun will ACTUALLY happen (budget enforced
+        # here, not in route). This keeps `revision` == performed rerun rounds, so
+        # the reported `revisions` matches the sequential/parallel pipelines (P2.2).
+        will_revise = verdict.needs_revision and rev < config.MAX_REVISIONS
         return {"verdict_status": verdict.status, "calls": [res],
-                "critiques": verdict.issues if verdict.needs_revision else {},
-                "revision": rev + (1 if verdict.needs_revision else 0)}
+                "critiques": verdict.issues if will_revise else {},
+                "revision": rev + (1 if will_revise else 0)}
 
     def route(state: _State):
-        revise = bool(state.get("critiques"))
-        within_budget = state.get("revision", 0) <= config.MAX_REVISIONS
-        if revise and within_budget:
+        # Budget is already enforced in reviewer_node: non-empty critiques means a
+        # rerun is both wanted and within budget.
+        if state.get("critiques"):
             return ["summarizer", "extractor", "drafter"]
         return END
 

@@ -113,3 +113,31 @@ class TestSelectiveReExecution:
         assert bundle.drafter.run.call_count    == 1
         # extractor called twice (initial + 1 revision)
         assert bundle.extractor.run.call_count  == 2
+
+
+# ------------------------------------------------------------------ langgraph revision parity
+class TestLangGraphRevisionLoop:
+    @pytest.mark.asyncio
+    async def test_revisions_match_sequential_at_cap(self):
+        """Reviewer always says revise → langgraph must report the SAME revision
+        count as sequential/parallel (== MAX_REVISIONS), not MAX_REVISIONS+1 (P2.2)."""
+        pytest.importorskip("langgraph")
+        from pipeline.langgraph_pipeline import run_langgraph
+        with patch("pipeline.langgraph_pipeline.AgentBundle") as MockBundle:
+            bundle = MagicMock()
+            MockBundle.return_value = bundle
+            bundle.coordinator.run = AsyncMock(return_value=_make_call("coordinator", "brief"))
+            bundle.summarizer.run  = AsyncMock(return_value=_make_call("summarizer"))
+            bundle.extractor.run   = AsyncMock(return_value=_make_call("extractor"))
+            bundle.drafter.run     = AsyncMock(return_value=_make_call("drafter"))
+            bundle.reviewer.run    = AsyncMock(return_value=_revise_verdict("summarizer"))
+
+            from bench.trace import Tracer
+            import httpx
+            async with httpx.AsyncClient() as client:
+                result = await run_langgraph("transcript", "small", client,
+                                             Tracer(), stream=False)
+
+        assert result.revisions == config.MAX_REVISIONS
+        # langgraph re-runs all workers each round: 1 initial + MAX_REVISIONS reruns
+        assert bundle.summarizer.run.call_count == 1 + config.MAX_REVISIONS
