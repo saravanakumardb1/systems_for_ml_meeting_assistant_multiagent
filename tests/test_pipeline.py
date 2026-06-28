@@ -115,6 +115,39 @@ class TestSelectiveReExecution:
         assert bundle.extractor.run.call_count  == 2
 
 
+# ------------------------------------------------------------------ sequential selective (P2.1)
+class TestSequentialSelectiveReExecution:
+    @pytest.mark.asyncio
+    async def test_only_flagged_worker_rerun_and_no_double_count(self):
+        """Sequential must re-run ONLY the flagged worker (parity with parallel),
+        and carried-over workers must not be double-counted in result.calls (P2.1)."""
+        from pipeline.sequential import run_sequential
+        with patch("pipeline.sequential.AgentBundle") as MockBundle:
+            bundle = MagicMock()
+            MockBundle.return_value = bundle
+            bundle.coordinator.run = AsyncMock(return_value=_make_call("coordinator", "brief"))
+            bundle.summarizer.run  = AsyncMock(return_value=_make_call("summarizer"))
+            bundle.extractor.run   = AsyncMock(return_value=_make_call("extractor"))
+            bundle.drafter.run     = AsyncMock(return_value=_make_call("drafter"))
+            bundle.reviewer.run = AsyncMock(side_effect=[
+                _revise_verdict("extractor"),   # flag extractor only
+                _pass_verdict(),
+            ])
+
+            from bench.trace import Tracer
+            import httpx
+            async with httpx.AsyncClient() as client:
+                result = await run_sequential("transcript", "small", client,
+                                              Tracer(), stream=False)
+
+        assert bundle.summarizer.run.call_count == 1   # not re-run
+        assert bundle.drafter.run.call_count    == 1   # not re-run
+        assert bundle.extractor.run.call_count  == 2   # initial + 1 revision
+        # calls = coordinator(1) + initial workers(3) + reviewer(1)
+        #         + rerun extractor(1) + reviewer(1) = 7  (no carried-over double count)
+        assert len(result.calls) == 7
+
+
 # ------------------------------------------------------------------ langgraph revision parity
 class TestLangGraphRevisionLoop:
     @pytest.mark.asyncio

@@ -98,7 +98,8 @@ class TestSharedPrefixLayout:
         assert "TASK:" in body
         assert body.rstrip().endswith("do the thing")  # role instruction at the END
 
-    def test_default_construction_keeps_role_system_prompt(self):
+    def test_default_construction_keeps_role_system_prompt(self, monkeypatch):
+        monkeypatch.setattr(worker_util.config, "SHARED_PREFIX_LAYOUT", False)
         s = Summarizer(object())
         assert s.shared_prefix is False
         assert s.system_prompt == s.role_instruction  # no swap in default mode

@@ -23,23 +23,39 @@ async def run_sequential(transcript: str, transcript_size: str,
     tracer.add_span(coord.to_span())
     brief = coord.text
 
-    async def run_workers(critiques: dict[str, str] | None, rev: int):
+    async def run_workers(critiques: dict[str, str] | None, rev: int,
+                          prev: tuple | None = None):
         critiques = critiques or {}
-        with tracer.span("summarizer", kind="phase"):
-            s = await agents.summarizer.run(brief, transcript,
-                                            critiques.get("summarizer"), revision=rev)
-        with tracer.span("extractor", kind="phase"):
-            e = await agents.extractor.run(brief, transcript,
-                                           critiques.get("extractor"), revision=rev)
-        with tracer.span("drafter", kind="phase"):
-            d = await agents.drafter.run(brief, transcript,
-                                         critiques.get("drafter"), revision=rev)
-        for c in (s, e, d):
+        prev_s, prev_e, prev_d = prev if prev else (None, None, None)
+
+        # Selective re-dispatch (P2.1): on the initial pass (no prev) run all three;
+        # on revision rounds re-run ONLY workers the reviewer flagged, carrying the
+        # rest forward unchanged. This matches the parallel/langgraph policy so the
+        # three modes do the same amount of work per revision.
+        specs: dict[str, tuple] = {
+            "summarizer": (agents.summarizer, prev_s),
+            "extractor":  (agents.extractor,  prev_e),
+            "drafter":    (agents.drafter,    prev_d),
+        }
+        run_results: dict[str, object] = {}
+        for name, (agent, prev_result) in specs.items():
+            if prev_result is None or critiques.get(name):
+                with tracer.span(name, kind="phase"):
+                    run_results[name] = await agent.run(
+                        brief, transcript, critiques.get(name), revision=rev)
+
+        # Count + trace ONLY freshly-run workers so carried-over results aren't
+        # double-counted in result.calls across revision rounds.
+        result.add(*run_results.values())
+        for c in run_results.values():
             tracer.add_span(c.to_span())
+
+        s = run_results.get("summarizer", prev_s)
+        e = run_results.get("extractor",  prev_e)
+        d = run_results.get("drafter",    prev_d)
         return s, e, d
 
     summ, extr, draft = await run_workers(None, 0)
-    result.add(summ, extr, draft)
 
     rev = 0
     while True:
@@ -54,8 +70,8 @@ async def run_sequential(transcript: str, transcript_size: str,
             break
         rev += 1
         result.revisions = rev
-        summ, extr, draft = await run_workers(verdict.issues, rev)
-        result.add(summ, extr, draft)
+        summ, extr, draft = await run_workers(verdict.issues, rev,
+                                              prev=(summ, extr, draft))
 
     result.artifacts = {"summary": summ.text, "action_items": extr.text,
                         "followups": draft.text, "brief": brief}
