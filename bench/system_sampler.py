@@ -65,7 +65,9 @@ class SystemSampler:
         self._proc = psutil.Process()
 
     def _loop(self) -> None:
-        self._proc.cpu_percent(None)        # prime the interval-based reading
+        # Prime the SYSTEM-wide cpu_percent (the value we actually sample below);
+        # priming the per-process reading here was a no-op since we never sample it.
+        psutil.cpu_percent(interval=None)
         while not self._stop.is_set():
             try:
                 self.samples.cpu_percent.append(psutil.cpu_percent(interval=None))
