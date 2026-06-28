@@ -82,6 +82,12 @@ async def main_async(args) -> None:
 
     limits = httpx.Limits(max_connections=16, max_keepalive_connections=16)
     async with httpx.AsyncClient(limits=limits) as client:
+        # TODO-3 (P5.2): add a cold-control arm that resets the prefix cache BETWEEN
+        # modes to measure the true cold-start cost per topology. Needs a strategy
+        # for real vLLM (no runtime cache-reset endpoint): restart the server per
+        # mode, or launch with --no-enable-prefix-caching. The mock exposes
+        # POST /reset_cache; a real-hardware approach is an open decision.
+        #
         # Warmup: prime the server prefix cache per size so EVERY measured run starts
         # warm, removing the cold-first-run asymmetry. Warmups are discarded (P1.1).
         if args.warmup > 0:

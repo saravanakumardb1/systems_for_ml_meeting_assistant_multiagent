@@ -59,7 +59,7 @@ relies on them.
 These are the findings that undermine the headline results. Highest priority for a
 benchmark whose entire purpose is measurement.
 
-- [ ] **P1.1 Eliminate the cache-warming confound.** *(Critical)*
+- [x] **P1.1 Eliminate the cache-warming confound.** *(Critical)* ✅ [`8ed2ba1`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/8ed2ba1)
   The sweep always runs modes in fixed order `sequential → parallel → langgraph`
   against one long-lived server whose prefix cache is never reset. The first repeat of
   the first mode is cold; everything after is warm. Result: server-side prefix-cache
@@ -77,7 +77,7 @@ benchmark whose entire purpose is measurement.
         offline reproduction / CI exhibits the *same* warming artifact (first run cold,
         rest warm). Apply the warmup/reset logic to the offline path too, or expose a
         reset hook on the mock, so offline numbers are representative.
-- [ ] **P1.2 Make the per-request prefix-cache metric real or remove it.** *(Critical)*
+- [x] **P1.2 Make the per-request prefix-cache metric real or remove it.** *(Critical)* ✅ [`083d1ed`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/083d1ed)
   In every committed run, every agent reports `cached_tokens=0`, so
   `prefix_cache_hit_ratio` (a headline metric) is uniformly `0.000`. vLLM never
   populated `prompt_tokens_details.cached_tokens`.
@@ -85,7 +85,7 @@ benchmark whose entire purpose is measurement.
   - [ ] Document the vLLM version/flags required to populate it.
   - [ ] If unavailable on target hardware, drop the metric and rely on the server-side
         counter (and update README Result #3 accordingly).
-- [ ] **P1.3 Reorder worker prompts so the shared prefix is actually shared.** *(High)*
+- [x] **P1.3 Reorder worker prompts so the shared prefix is actually shared.** *(High)* ✅ [`e43b617`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/e43b617) — behind `SHARED_PREFIX_LAYOUT` (default OFF); output-quality validation is **TODO-2**.
   Workers send `[system=role-specific, user=brief+transcript]`. vLLM prefix caching
   matches from token 0, but the system prompt differs per worker, so the big
   `brief+transcript` block sits in the *middle* and is never reused across workers —
@@ -102,11 +102,9 @@ benchmark whose entire purpose is measurement.
 The three modes currently do different *amounts of work* on revision, contaminating
 latency/token comparisons.
 
-- [ ] **P2.1 Unify the re-dispatch policy.** *(open — see TODO-2)* Sequential re-runs all 3 workers,
-  parallel re-runs only flagged workers, langgraph re-runs all 3
-  (`pipeline/langgraph_pipeline.py:82-87`). Pick one policy (recommend selective) and
-  apply it across all three modes, or document the difference and exclude it from
-  comparisons.
+- [x] **P2.1 Unify the re-dispatch policy.** ✅ [`17a9c44`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/17a9c44) — all modes now selective; also fixed a
+  carried-over double-count in `result.calls`. Previously sequential re-ran all 3
+  workers, parallel re-ran only flagged, langgraph re-ran all 3.
 - [x] **P2.2 Fix the `revisions` off-by-one.** ✅ [`518d12a`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/518d12a) For identical work, langgraph reports
   `revisions=3` while sequential/parallel report `2` (`reviewer_node` increments even
   on the budget-capped pass). Make `result.revisions` count *performed* rerun rounds
@@ -137,26 +135,25 @@ Add tests that would have caught the bugs above.
 
 - [x] **P4.1** Assert langgraph revision count == sequential/parallel for the same
   reviewer behavior (covers P2.2). ✅ [`518d12a`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/518d12a)
-- [~] **P4.2** Test `_call_once` and streaming error paths (empty `choices`,
-  malformed JSON, missing `usage`) — covers P3.1. Non-stream paths done in
-  [`1d7572e`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/1d7572e); streaming-path tests still TODO.
+- [x] **P4.2** Test `_call_once` and streaming error paths (empty `choices`,
+  malformed JSON, missing `usage`) — covers P3.1. Non-stream [`1d7572e`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/1d7572e) + streaming [`b05d139`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/b05d139).
 - [x] **P4.3** Test that an errored worker does **not** produce a spurious `pass`
   verdict / is flagged invalid — covers P3.2. ✅ [`076654e`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/076654e)
-- [ ] **P4.4** Test re-dispatch policy parity across modes — covers P2.1.
-- [ ] **P4.5** Test the warmup/cache-reset bookkeeping in run records — covers P1.1.
+- [x] **P4.4** Test re-dispatch policy parity across modes — covers P2.1. ✅ [`17a9c44`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/17a9c44)
+- [x] **P4.5** Test the warmup/cache-reset bookkeeping — mock `/reset_cache` + warm-then-reset. ✅ [`b05d139`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/b05d139)
 
 ---
 
 ## Phase 5 — Analysis & reporting quality
 
-- [ ] **P5.1 Statistical rigor.** With 3 repeats and visible bimodality
-  (e.g. `parallel large_finance [0.66,0.39,0.66]`), report confidence intervals and
-  increase repeats; current means hide variance.
-- [ ] **P5.2 Cache-cold control arm.** Run each mode once with prefix caching disabled
-  to isolate the topology effect from cache warming.
-- [ ] **P5.3 Refresh README results** once P1/P2 land — Results #2/#3 currently
-  describe confounded numbers.
-- [ ] **P5.4 Pin vLLM version** in docs and fail-loud on missing metrics (ties to P1.2).
+- [x] **P5.1 Statistical rigor.** ✅ [`9815a11`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/9815a11) `summarize` now emits `n_runs` + `<metric>_ci95`.
+  Increasing repeat counts on real hardware remains the author's call.
+- [ ] **P5.2 Cache-cold control arm.** *(open — TODO-3)* Run each mode once with prefix
+  caching disabled (or server restarted between modes) to isolate the topology effect
+  from cache warming. Needs a real-hardware reset strategy (no vLLM runtime endpoint).
+- [x] **P5.3 Refresh README results caveat** ✅ [`82ff812`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/82ff812) — added a methodology caveat;
+  **regenerating the figures on real hardware remains open (TODO-4).**
+- [x] **P5.4 Pin vLLM version / fail-loud on missing metrics.** ✅ [`82ff812`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/82ff812) (doc note) + [`083d1ed`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/083d1ed) (runtime warning).
 
 ---
 
@@ -177,6 +174,25 @@ Add tests that would have caught the bugs above.
 - [ ] `.env.example` matches `agents/config.py` exactly.
 - [ ] No headline metric is silently zero on target hardware.
 - [ ] A single canonical transcript generator is documented (P0.2a).
+
+---
+
+## Open TODOs (for the author to decide — next plan)
+
+These are intentionally deferred decisions, flagged inline as `TODO-N` code comments
+so they can't slip:
+
+- **TODO-1** — `agents/config.py`: `API_KEY` is read but never sent as an
+  `Authorization` header. Wire it only if a secured vLLM endpoint is needed.
+- **TODO-2** — `agents/config.py` (shared-prefix layout): does moving the role
+  instruction to the END of a long (~66k-token) transcript degrade output quality?
+  Needs a real-model A/B (`SHARED_PREFIX_LAYOUT=0` vs `1`) before flipping the default.
+- **TODO-3** — `bench/runner.py` (P5.2): cold-control arm that resets the cache
+  between modes. Decide the real-hardware reset strategy (restart per mode vs
+  `--no-enable-prefix-caching`); the mock already exposes `POST /reset_cache`.
+- **TODO-4** — (doc-only) regenerate the committed `results/` figures on real
+  hardware with the corrected runner (`--warmup` + shuffle) so README Results
+  #2–#4 reflect the de-confounded methodology.
 
 ---
 
