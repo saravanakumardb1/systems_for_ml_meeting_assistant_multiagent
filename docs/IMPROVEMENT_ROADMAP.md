@@ -23,17 +23,17 @@ These must stay green after every phase below.
 The repo currently ships docs that describe a removed architecture. Fix before anyone
 relies on them.
 
-- [ ] **P0.1 Rewrite `.env.example`.** It documents `MA_USE_MOCK`, `MA_SMALL_URL`,
+- [x] **P0.1 Rewrite `.env.example`.** ✅ [`162511d`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/162511d) It documents `MA_USE_MOCK`, `MA_SMALL_URL`,
   `MA_LARGE_URL`, `MA_SMALL_MODEL`, `MA_LARGE_MODEL` (8B + 70B), `MA_GUIDED_JSON`,
   `MA_PARSE_RETRIES`, `MA_TEMPERATURE`, etc. — **none are read by any code**. Replace
   with the vars actually consumed by `agents/config.py`:
   `VLLM_BASE_URL`, `VLLM_METRICS_URL`, `MODEL_NAME`, `VLLM_API_KEY`,
   `REQUEST_TIMEOUT_S`, `MAX_RETRIES`, `MAX_REVISIONS`.
-- [ ] **P0.2 Reconcile transcript-size docs.** `config.TRANSCRIPT_SIZES` says
+- [x] **P0.2 Reconcile transcript-size docs.** ✅ [`1cf6c83`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/1cf6c83) `config.TRANSCRIPT_SIZES` says
   `large.target_tokens=13000` and README says "~8k–15k tokens", but committed
   `large_finance` runs show ~66k prompt tokens/agent. Either re-document the real
   tiers or note that committed transcripts intentionally exceed the synthetic targets.
-- [ ] **P0.2a Reconcile the two transcript generators.** There are **two disjoint
+- [x] **P0.2a Reconcile the two transcript generators.** ✅ [`1cf6c83`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/1cf6c83) There are **two disjoint
   sizing systems**: `scripts/make_synthetic_transcripts.py` builds the six *named*
   files actually used in the README sweep using per-domain `target_words`
   (small_ami ~4.0k words/~5.3k tok … large_meetingbank ~50k words/~66k tok), while
@@ -43,11 +43,11 @@ relies on them.
   either align `config.TRANSCRIPT_SIZES` to the named files' real sizes or clearly
   separate "synthetic smoke" (generate_transcripts) from "benchmark corpus"
   (make_synthetic_transcripts).
-- [ ] **P0.3 Fix `.gitignore` contradiction.** Comment says "keep committed results"
+- [x] **P0.3 Fix `.gitignore` contradiction.** ✅ [`f5b8d3e`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/f5b8d3e) Comment says "keep committed results"
   but patterns ignore `results/runs/*.json` and `results/figures/*.png` (only tracked
   via prior `git add -f`). Either un-ignore the committed artifacts or change the
   comment + document the `-f` workflow so `bench.plot` re-runs are reproducible.
-- [ ] **P0.4 Clean stale references.** `setup.sh` installs `vllm-tpu` and launches
+- [x] **P0.4 Clean stale references.** ✅ [`f5b8d3e`](https://github.com/saravanakumardb1/systems_for_ml_meeting_assistant_multiagent/commit/f5b8d3e) `setup.sh` installs `vllm-tpu` and launches
   `Qwen/Qwen3-4B` (unrelated to the documented Llama-3.1-8B in
   `scripts/launch_vllm_8b.sh`); `.gitignore` still lists `data/ground_truth/*.json`
   though ground truth was removed.
