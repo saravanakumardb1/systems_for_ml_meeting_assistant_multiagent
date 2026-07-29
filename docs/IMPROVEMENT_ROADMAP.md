@@ -177,22 +177,87 @@ Add tests that would have caught the bugs above.
 
 ---
 
-## Open TODOs (for the author to decide — next plan)
+## Open TODOs — sorted by what unblocks them
 
-These are intentionally deferred decisions, flagged inline as `TODO-N` code comments
-so they can't slip:
+Flagged inline as `TODO-N` code comments so they can't slip.
 
-- **TODO-1** — `agents/config.py`: `API_KEY` is read but never sent as an
-  `Authorization` header. Wire it only if a secured vLLM endpoint is needed.
-- **TODO-2** — `agents/config.py` (shared-prefix layout): does moving the role
-  instruction to the END of a long (~66k-token) transcript degrade output quality?
-  Needs a real-model A/B (`SHARED_PREFIX_LAYOUT=0` vs `1`) before flipping the default.
-- **TODO-3** — `bench/runner.py` (P5.2): cold-control arm that resets the cache
-  between modes. Decide the real-hardware reset strategy (restart per mode vs
-  `--no-enable-prefix-caching`); the mock already exposes `POST /reset_cache`.
-- **TODO-4** — (doc-only) regenerate the committed `results/` figures on real
-  hardware with the corrected runner (`--warmup` + shuffle) so README Results
-  #2–#4 reflect the de-confounded methodology.
+**Reviewed 2026-07-28.** All four were filed under *"for the author to decide"*.
+Re-read against the source, **only two are decisions.** The heading was doing
+double duty: *deferred* and *needs a ruling* are different states, and conflating
+them means a two-line change waits on a judgement nobody owes it, while the real
+questions sit in the same undifferentiated list.
+
+| | Item | Actually blocked on | Ready? |
+|---|---|---|---|
+| TODO-1 | `Authorization` header never sent | **Nothing** — no ruling needed | **Do it** |
+| TODO-2 | Shared-prefix layout default | Owner, after a real-model A/B | No — measurement missing |
+| TODO-3 | Cold-control reset strategy | Owner | Yes |
+| TODO-4 | Regenerate committed figures | Real hardware | No — needs a GPU host |
+
+### TODO-1 — `Authorization` header is never sent · **not a decision**
+
+`agents/config.py:24` reads `VLLM_API_KEY`, and `agents/base.py` never sends it.
+Confirmed rather than assumed: both `_call_stream` (`:144`) and `_call_once`
+(`:179`) post to `/v1/chat/completions` with `json=payload` and
+`timeout=config.REQUEST_TIMEOUT_S` and **no `headers=` argument at all**.
+
+There is nothing to choose here. Adding the header is ~2 lines, and it is
+**harmless when unused** — local vLLM ignores the value (hence the `"EMPTY"`
+default) and the mock server does not inspect headers. The condition in the
+current note, *"wire it only if a secured vLLM endpoint is needed"*, defers work
+that costs less than the deferral: today the failure mode is that someone points
+this at a secured endpoint, gets 401s, and has to discover why, with a config var
+that reads as though it is wired.
+
+**Do:** pass `headers={"Authorization": f"Bearer {config.API_KEY}"}` in both call
+paths. **Done when:** `pytest` + `ruff` stay green against the mock.
+
+### TODO-2 — Shared-prefix layout default · **decision, prereq not met**
+
+`SHARED_PREFIX_LAYOUT` (`agents/config.py:39`) is implemented and defaults to `0`.
+`agents/worker_util.py:31` puts `TRANSCRIPT` first and the role instruction last
+when enabled — the layout that makes prefix caching actually shareable across
+agents, which is the headline claim.
+
+**Question:** does moving the role instruction to the end of a ~66k-token
+transcript degrade output quality enough to matter?
+
+| | Option | Cost |
+|---|---|---|
+| **A** | Flip the default to `1` | Free; makes the headline claim real by default |
+| **B** | Leave `0`, keep the toggle | Free; the claim stays opt-in and mostly untested |
+
+**Before this can be answered:** the A/B has never been run on a real model.
+Answering now means guessing whether instruction-at-the-end costs quality — a
+known-sensitive prompt-ordering question. Gather first: run both arms on real
+hardware and compare output quality, then decide.
+
+### TODO-3 — Cold-control reset strategy · **decision, answerable now**
+
+`bench/runner.py:89-90` names the fork in a comment and leaves it open. The mock
+already exposes `POST /reset_cache`; the question is only what the *real-hardware*
+arm does.
+
+**Question:** how does the cold-control arm clear the prefix cache between modes?
+
+| | Option | Cost | Trade |
+|---|---|---|---|
+| **A** | Restart the server per mode | Slow sweeps; more orchestration | Truly cold, closest to a clean-room measurement |
+| **B** | `--no-enable-prefix-caching` | Cheap; one flag | Measures *caching disabled*, not *cache cold* — subtly different claim |
+| **C** | An HTTP reset endpoint, as the mock has | Fast | Depends on the real server exposing one; vLLM may not |
+
+Worth deciding before the sweep is re-run for the results rewrite, since it
+changes what the cold numbers mean.
+
+### TODO-4 — Regenerate committed figures · **blocked on hardware, not a ruling**
+
+The nine PNGs plus `summary.csv` in `results/figures/` were produced by the
+pre-`--warmup`/pre-shuffle runner, so they encode the confound P1.1 removed.
+`--warmup` (`bench/runner.py:170`) now exists and defaults to `1`.
+
+No decision — it needs a GPU host and a re-run. Filed here only so the stale
+figures are not mistaken for current. Ties to the Definition of done item
+*"README Results section regenerated from a re-run sweep with the confound removed."*
 
 ---
 
