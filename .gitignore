@@ -7,13 +7,17 @@ venv/
 .pytest_cache/
 .ruff_cache/
 
-# generated artifacts — keep committed results, ignore transient re-runs
+# Generated artifacts. The curated results/ snapshot is committed via `git add -f`
+# (results/runs/*.json + results/figures/*). These patterns stop transient *re-runs*
+# from being committed by accident; use `git add -f` to update the committed snapshot.
 data/synthetic/*.txt
 data/normalized/*.txt
-data/ground_truth/*.json
 results/runs/*.json
 results/figures/*.png
 results/figures/summary.csv
 
 # keep the dir scaffolding
 !**/.gitkeep
+
+# Local (non-canonical) Ollama benchmark sweeps
+results/ollama/

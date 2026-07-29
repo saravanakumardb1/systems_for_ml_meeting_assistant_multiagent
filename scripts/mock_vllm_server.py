@@ -143,6 +143,20 @@ async def chat(request: Request):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+@app.post("/reset_cache")
+async def reset_cache():
+    """Clear the simulated prefix cache + counters (mock-only).
+
+    Lets tests / a cold-control benchmark arm reset state between modes so the
+    offline path doesn't carry the same cross-run warming artifact as a real,
+    never-restarted vLLM server (P1.1 mock parity).
+    """
+    _SEEN_PREFIXES.clear()
+    for k in STATE:
+        STATE[k] = 0 if k == "running" else 0.0
+    return JSONResponse({"status": "reset"})
+
+
 @app.get("/metrics")
 async def metrics():
     # cache usage proxy: more in-flight -> higher occupancy

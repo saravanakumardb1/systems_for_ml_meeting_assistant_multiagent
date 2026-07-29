@@ -75,16 +75,24 @@ def _build_graph(agents: AgentBundle, tracer: Tracer):
                 state["transcript"], state.get("summary", ""),
                 state.get("action_items", ""), state.get("followups", ""), revision=rev)
         tracer.add_span(res.to_span())
+        # Only count a revision when a rerun will ACTUALLY happen (budget enforced
+        # here, not in route). This keeps `revision` == performed rerun rounds, so
+        # the reported `revisions` matches the sequential/parallel pipelines (P2.2).
+        will_revise = verdict.needs_revision and rev < config.MAX_REVISIONS
+        # Keep only the FLAGGED workers' critiques so route re-runs just those
+        # (selective re-dispatch, P2.1); the rest persist in state unchanged.
+        flagged = ({w: c for w, c in verdict.issues.items() if c and c.strip()}
+                   if will_revise else {})
         return {"verdict_status": verdict.status, "calls": [res],
-                "critiques": verdict.issues if verdict.needs_revision else {},
-                "revision": rev + (1 if verdict.needs_revision else 0)}
+                "critiques": flagged,
+                "revision": rev + (1 if will_revise else 0)}
 
     def route(state: _State):
-        revise = bool(state.get("critiques"))
-        within_budget = state.get("revision", 0) <= config.MAX_REVISIONS
-        if revise and within_budget:
-            return ["summarizer", "extractor", "drafter"]
-        return END
+        # Budget already enforced in reviewer_node: non-empty critiques means a
+        # rerun is wanted + within budget. Re-run ONLY the flagged workers.
+        crit = state.get("critiques") or {}
+        flagged = [w for w in ("summarizer", "extractor", "drafter") if w in crit]
+        return flagged or END
 
     g = StateGraph(_State)
     for name, fn in [("coordinator", coordinator_node), ("summarizer", summarizer_node),
@@ -131,4 +139,5 @@ async def run_langgraph(transcript: str, transcript_size: str,
         "followups": final.get("followups", ""),
         "brief": final.get("brief", ""),
     }
+    result.finalize()
     return result

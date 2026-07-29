@@ -50,8 +50,31 @@ share the transcript prefix) → `reviewer` (critic; bounded reflection loop,
 > Note: TPU/GPU device utilisation is not exposed via the OpenAI API. The
 > scrapeable proxies for device pressure are KV-cache occupancy and queue depth
 > from vLLM `/metrics`; host CPU/RAM come from `psutil`.
+>
+> **vLLM version note (P1.2/P5.4):** the per-request prefix-cache metric depends on
+> the server populating `usage.prompt_tokens_details.cached_tokens`. Some vLLM
+> builds never do (then `prefix_cache_hit_ratio` is uniformly 0). The runner emits
+> a loud warning at the end of a sweep when this happens; in that case rely on the
+> server-side `delta_server_prefix_cache_hit_rate` from `/metrics`. Pin a vLLM
+> version known to emit per-request cached tokens if you need that metric.
 
 ## Results
+
+> **⚠️ Methodology caveat (results pre-date the measurement fixes).** The committed
+> figures below were produced *before* the benchmark-correctness fixes in
+> `docs/IMPROVEMENT_ROADMAP.md`:
+> - The sweep ran modes in fixed order against a never-reset server, so the
+>   prefix-cache hit rate correlated with **execution order, not topology**
+>   (P1.1). Result #3's monotonic seq→par→lg rise is largely a cache-warming
+>   artifact; once warm, all three modes are comparable.
+> - The per-request `prefix_cache_hit_ratio` was **inert** (the server never
+>   populated `cached_tokens`); only the server-side counter carried signal (P1.2).
+> - Re-dispatch policy differed across modes, so revision-round token/latency
+>   counts weren't directly comparable (P2.1).
+>
+> The runner now defaults to `--warmup 1` + shuffled order and records
+> `run_index`. **Re-run the sweep on real hardware to regenerate these figures**
+> before citing Results #2–#4.
 
 Measured on **Llama-3.1-8B** (vLLM, Cloud TPU v5e) across a 54-run sweep:
 6 transcripts spanning three size tiers (`small_ami`, `small_swe`,
@@ -62,10 +85,19 @@ Measured on **Llama-3.1-8B** (vLLM, Cloud TPU v5e) across a 54-run sweep:
 > **Transcript provenance.** All transcripts shipped in `transcripts/` are
 > **synthetic**, produced by the seeded generator
 > `scripts/make_synthetic_transcripts.py` (no real recordings or personal
-> data). They are sized to match the original benchmark tiers within a few
-> percent; the committed `results/` were measured on real hardware with
-> equivalently-sized inputs, so the figures below remain representative of the
-> systems behaviour rather than of any specific meeting content.
+> data). The committed `results/` were measured on real hardware with these
+> inputs, so the figures below remain representative of the systems behaviour
+> rather than of any specific meeting content.
+>
+> **Two transcript generators (don't confuse them):**
+> - `scripts/make_synthetic_transcripts.py` produces the six **named benchmark
+>   files** in `transcripts/` (domain-flavoured, word-targeted:
+>   `small_ami` ~5k tok … `large_meetingbank` ~66k tok). This is the canonical
+>   corpus for the published sweep.
+> - `scripts/generate_transcripts.py` + `config.TRANSCRIPT_SIZES` produce small
+>   token-targeted `small/medium/large.txt` for **offline smoke tests / CI**
+>   (1.2k / 5k / 13k tok). These are intentionally smaller and are *not* the
+>   benchmark corpus.
 
 1. **Concurrent dispatch cuts end-to-end latency 29–40% on medium/large
    transcripts.** Parallel vs. sequential: `large_meetingbank` 63.1 s → 37.9 s
@@ -134,6 +166,38 @@ The mock returns contract-correct outputs (JSON for extractor/reviewer, Markdown
 elsewhere) and simulated `usage` with `cached_tokens`, so the reflection loop,
 parsers, and every metric path execute for real.
 
+## Run locally on Ollama (real model, no TPU/GPU server)
+
+[Ollama](https://ollama.com) exposes an OpenAI-compatible API, so the agents can
+target it directly. A convenience wrapper handles env + transcripts + summary:
+
+```bash
+ollama pull llama3.1:8b
+scripts/run_ollama.sh                          # small, 3 modes, 3 repeats, warmup 1
+SIZES="small medium" REPEATS=2 scripts/run_ollama.sh
+OLLAMA_MODEL=qwen3.5:9b scripts/run_ollama.sh
+```
+
+Or run the pieces manually:
+
+```bash
+export VLLM_BASE_URL=http://localhost:11434 MODEL_NAME=llama3.1:8b
+export NO_PROXY=localhost,127.0.0.1            # bypass any corporate proxy for localhost
+python scripts/generate_transcripts.py --offline --sizes small
+python -m bench.runner --sizes small --no-server-metrics --runs-dir results/ollama/runs
+```
+
+Caveats specific to Ollama:
+
+- **No vLLM `/metrics`** → pass `--no-server-metrics` (host CPU/RAM still sampled).
+- **No per-request `cached_tokens`** → `prefix_cache_hit_ratio` is 0 and the runner
+  prints a loud P1.2 warning. This is expected; use a vLLM host to exercise prefix
+  caching.
+- **Single model instance serializes requests** → `parallel` ≈ `sequential`
+  wall-clock (no decode batching), unlike a batching server like vLLM.
+- Output goes to `results/ollama/runs/` (git-ignored) so a local sweep never
+  clobbers the canonical TPU corpus in `results/runs/`.
+
 ## Layout
 
 ```
@@ -142,7 +206,7 @@ meeting-assistant/
 ├── pipeline/      sequential.py, parallel.py, langgraph_pipeline.py
 ├── bench/         runner.py, metrics.py, trace.py, system_sampler.py, vllm_metrics.py, plot.py
 ├── prompts/       one .md per agent + transcript_generator.md
-├── scripts/       launch_vllm_8b.sh, generate_transcripts.py,
+├── scripts/       launch_vllm_8b.sh, run_ollama.sh, generate_transcripts.py,
 │                  make_synthetic_transcripts.py, mock_vllm_server.py
 ├── transcripts/   synthetic transcripts (small_ami, small_swe, medium_finance,
 │                  medium_welsh, large_finance, large_meetingbank)

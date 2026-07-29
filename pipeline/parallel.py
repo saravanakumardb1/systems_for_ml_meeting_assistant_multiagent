@@ -48,15 +48,18 @@ async def run_parallel(transcript: str, transcript_size: str,
             gathered = await asyncio.gather(*to_run.values()) if to_run else []
         run_results = dict(zip(to_run.keys(), gathered))
 
+        # Count + trace ONLY freshly-run workers so carried-over results aren't
+        # double-counted in result.calls across revision rounds (P2.1).
+        result.add(*run_results.values())
+        for c in run_results.values():
+            tracer.add_span(c.to_span())
+
         s = run_results.get("summarizer", prev_s)
         e = run_results.get("extractor",  prev_e)
         d = run_results.get("drafter",    prev_d)
-        for c in (s, e, d):
-            tracer.add_span(c.to_span())
         return s, e, d
 
     summ, extr, draft = await run_workers(None, 0)
-    result.add(summ, extr, draft)
 
     rev = 0
     while True:
@@ -73,8 +76,8 @@ async def run_parallel(transcript: str, transcript_size: str,
         result.revisions = rev
         summ, extr, draft = await run_workers(verdict.issues, rev,
                                               prev=(summ, extr, draft))
-        result.add(summ, extr, draft)
 
     result.artifacts = {"summary": summ.text, "action_items": extr.text,
                         "followups": draft.text, "brief": brief}
+    result.finalize()
     return result
